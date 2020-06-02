@@ -49,7 +49,7 @@ expect_output(expect_false(check_variable(123, type.raw())), "Type doesn't match
 # Complex Numbers Tests -----------------------
 
 expect_true(check_variable(c(1i, 2i, 3i), type.complex()))
-#expect_false(check_variable(c(1i, NA, 2i, 3i), type.complex(allow.na = FALSE)))
+expect_false(check_variable(c(1i, NA, 2i, 3i), type.complex(allow.na = FALSE)))
 
 # Numeric Matrices Tests -----------------------
 
@@ -63,3 +63,8 @@ expect_false(check_variable(matrix(1,1,1), type.matrix.numeric(nrow = 2, ncol = 
 expect_true(check_variable(1, type.any()))
 expect_true(check_variable("1", type.any()))
 expect_true(check_variable(NULL, type.any()))
+
+# Incorrect Type Description -----------------------
+
+expect_error(check_variable(1, NULL))
+expect_error(check_variable(1, list()))

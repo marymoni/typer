@@ -90,8 +90,12 @@ const char * type_names_map[TYPES_COUNT] = {
 int check_variable(const SEXP var_obj, const SEXP var_type, const char * var_name) {
 
     Rprintf("Checking type for variable '%s'\n", var_name);
+    
+    if (TYPEOF(var_type) != VECSXP) {
+        Rf_error("Incorrect type description for variable '%s'\n", var_name);
+    }
 
-    int var_type_id = asInteger(VECTOR_ELT(var_type, get_position_safe(var_type, "type")));
+    int var_type_id = asInteger(VECTOR_ELT(var_type, get_position_safe(var_type, "type", var_name)));
     
     if (var_type_id == T_ANY) return TRUE;
 
@@ -370,6 +374,14 @@ int has_NAs(const SEXP var_obj) {
                 }
             }
             break;
+        case CPLXSXP:
+            for (int i = 0; i < length(var_obj); i++) {
+                Rcomplex v = COMPLEX_ELT(var_obj, i);
+                if (ISNAN(v.r) || ISNAN(v.i)) {
+                    return TRUE;
+                }
+            }
+            break;
         default:
             Rf_error("Unexpected type in has_NAs(%d)\n", type_id);
             return -1;
@@ -382,16 +394,18 @@ int has_NAs(const SEXP var_obj) {
  *   Searches for given item by name in list
  *
  *   list: list to be searched
- *   name: item name
+ *   item_name: item name
+ *   var_name: variable name for logging purposes
  *
  *   returns: item position number in list. Error if item is not found.
  */
-int get_position_safe(const SEXP list, const char *name) {
-    int pos = get_position_by_name(list, name);
+int get_position_safe(const SEXP list, const char *item_name, const char *var_name) {
+    int pos = get_position_by_name(list, item_name);
 
     if (pos == -1)
     {
-        Rf_error("Obligatory field `%s` was not found in the description!", name);
+        Rf_error("Mandatory field '%s' was not found in type description for variable '%s'",
+            item_name, var_name);
     }
 
     return pos;
@@ -420,7 +434,7 @@ int get_position_by_name(const SEXP list, const char *item_name) {
         }
     }
 
-    return -1; // unexpected value
+    return -1;
 }
 
 /*
@@ -436,13 +450,17 @@ int check_variable_list(const SEXP var_obj, const SEXP var_type, const char *var
 
     int res = TRUE;
 
+    SEXP var_type_items_obj = VECTOR_ELT(var_type, get_position_safe(var_type, "items", var_name));  
+    SEXP expected_items_names  = getAttrib(var_type_items_obj, R_NamesSymbol);
+    if (isNull(expected_items_names)) {
+        Rf_error("List items type description for variable '%s' must have names", var_name);
+    }
+
     SEXP var_items_names = getAttrib(var_obj, R_NamesSymbol);
-
-    SEXP items_obj = VECTOR_ELT(var_type, get_position_safe(var_type, "items"));
-    SEXP expected_items_names  = getAttrib(items_obj, R_NamesSymbol);
-
-    if (isNull(var_items_names)) Rf_error("List variable must have names");
-    if (isNull(expected_items_names)) Rf_error("List type must have names");
+    if (isNull(var_items_names)) {
+        Rprintf("Variable '%s' list items must have names\n", var_name);
+        return FALSE;
+    }
 
     for (int i = 0; i < length(expected_items_names); i++) {
 
@@ -454,14 +472,12 @@ int check_variable_list(const SEXP var_obj, const SEXP var_type, const char *var
             if (strcmp(type_item_name, CHAR(STRING_ELT(var_items_names, j))) == 0) {
                 found = TRUE;
 
-                SEXP type_item = VECTOR_ELT(items_obj, i);
+                SEXP type_item = VECTOR_ELT(var_type_items_obj, i);
                 SEXP var_item = VECTOR_ELT(var_obj, j);
 
                 int item_res = check_variable(var_item, type_item, type_item_name);
 
-                if (item_res != 1) {
-                    res = FALSE;
-                }
+                res = res && item_res;
 
                 break;
             }
@@ -489,13 +505,16 @@ int check_variable_envir(const SEXP var_obj, const SEXP var_type, const char *va
 
     int res = TRUE;
 
-    SEXP items_obj = VECTOR_ELT(var_type, get_position_safe(var_type, "items"));
-    SEXP expected_items_names  = getAttrib(items_obj, R_NamesSymbol);
+    SEXP var_type_items_obj = VECTOR_ELT(var_type, get_position_safe(var_type, "items", var_name));
+    SEXP expected_items_names  = getAttrib(var_type_items_obj, R_NamesSymbol);
+    if (isNull(expected_items_names)) {
+        Rf_error("List items type description for variable '%s' must have names", var_name);
+    }
 
-    for (int i = 0; i < length(items_obj); i++)
+    for (int i = 0; i < length(var_type_items_obj); i++)
     {
         const char * ivar_name = CHAR(STRING_ELT(expected_items_names, i));
-        SEXP type_item = VECTOR_ELT(items_obj, i);
+        SEXP type_item = VECTOR_ELT(var_type_items_obj, i);
         SEXP sym_sexp = Rf_installChar(STRING_ELT(expected_items_names, i));
 
         SEXP obj = Rf_findVarInFrame(var_obj, sym_sexp);
@@ -508,9 +527,7 @@ int check_variable_envir(const SEXP var_obj, const SEXP var_type, const char *va
 
         int item_res = check_variable(obj, type_item, ivar_name);
 
-        if (item_res != 1) {
-            res = FALSE;
-        }
+        res = res && item_res;
     }
 
     return(res);

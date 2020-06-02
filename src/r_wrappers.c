@@ -6,33 +6,30 @@
 #include "check_variable.h"
 
 /*
- * Function: square_the_biggest
- * ----------------------------
- *   Returns the square of the largest of its two input values
+ * Checks input variable matches type
  *
- *   n1: one real value 
- *   n2: the other real value
+ *   var_obj: variable object
+ *   var_type: variable type
+ *   var_name: variable name for logging purposes
  *
- *   returns: the square of the larger of n1 and n2 
+ *   returns: TRUE if variable matches type, FALSE otherwise
  */
-SEXP R_check_variable(const SEXP variable, const SEXP type, const SEXP variable_name) {
+SEXP R_check_variable(const SEXP var_obj, const SEXP var_type, const SEXP var_name) {
 
-    int res = check_variable(variable, type, CHAR(STRING_ELT(variable_name, 0)));
+    int res = check_variable(var_obj, var_type, CHAR(STRING_ELT(var_name, 0)));
     
     return ScalarLogical(res);
 }
 
 /*
- * Function: square_the_biggest
- * ----------------------------
- *   Returns the square of the largest of its two input values
+ * Checks input function parameters match types
  *
- *   n1: one real value 
- *   n2: the other real value
+ *   params: list with input function parameters
+ *   types: list with type descriptions of input parameters
  *
- *   returns: the square of the larger of n1 and n2 
+ *   returns: TRUE if input params match types, FALSE othwersie
  */
-SEXP R_check_input_params(const SEXP params, const SEXP type) {
+SEXP R_check_input_params(const SEXP params, const SEXP types) {
 
     int res = 1;
     int param_res;
@@ -41,16 +38,16 @@ SEXP R_check_input_params(const SEXP params, const SEXP type) {
 
     int param_len = length(params);
 
-    int expected_len = length(type);
+    int expected_len = length(types);
 
-    SEXP type_names = getAttrib(type, R_NamesSymbol);
+    SEXP type_names = getAttrib(types, R_NamesSymbol);
 
     if (isNull(param_names)) {
 
         // no param names, so will match them by position number
 
         for(int i = 0; i < MIN(param_len, expected_len); i++) {
-            param_res = check_variable(VECTOR_ELT(params, i), VECTOR_ELT(type, i), CHAR(STRING_ELT(type_names, i)));
+            param_res = check_variable(VECTOR_ELT(params, i), VECTOR_ELT(types, i), CHAR(STRING_ELT(type_names, i)));
             if (param_res == 0) {
                 res = 0;
             }
@@ -73,20 +70,19 @@ SEXP R_check_input_params(const SEXP params, const SEXP type) {
                 continue;
             }
 
-            int param_pos = get_position_by_name(param_names, param_name);
+            int param_pos = get_position_by_name(types, param_name);
 
             if (param_pos == -1) {
-                Rprintf("There is no description for param '%s'\n", param_name);
+                Rprintf("There is no type description for param '%s'\n", param_name);
                 res = 0;
                 continue;
             }
 
             matched_params[param_pos] = 1;
 
-            param_res = check_variable(VECTOR_ELT(params, i), VECTOR_ELT(type, param_pos), param_name);
-            if (param_res == 0) {
-                res = 0;
-            }
+            param_res = check_variable(VECTOR_ELT(params, i), VECTOR_ELT(types, param_pos), param_name);
+            
+            res = res && param_res;
         }
 
         // match rest of params by position number
@@ -95,7 +91,7 @@ SEXP R_check_input_params(const SEXP params, const SEXP type) {
             int j = 0;
             for(int i = 0; i < length(param_names); i++) {
                 if (!matched_params[i]) {
-                    param_res = check_variable(VECTOR_ELT(params, i), VECTOR_ELT(type, j), CHAR(STRING_ELT(type_names, j)));
+                    param_res = check_variable(VECTOR_ELT(params, i), VECTOR_ELT(types, j), CHAR(STRING_ELT(type_names, j)));
                     if (param_res == 0) {
                         res = 0;
                     }
@@ -109,12 +105,7 @@ SEXP R_check_input_params(const SEXP params, const SEXP type) {
 }
 
 /*
- *   Returns the square of the largest of its two input values
- *
- *   n1: one real value 
- *   n2: the other real value
- *
- *   returns: the square of the larger of n1 and n2 
+ *   Helper function to return type name by id
  */
 SEXP R_get_type_name(const SEXP var_type_id) {
     return mkChar(get_var_type_name(INTEGER(var_type_id)[0]));
